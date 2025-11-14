@@ -1,0 +1,62 @@
+name: Build SoftEther macOS Universal (ARM64 + Intel)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-macos-universal:
+    runs-on: macos-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          brew install cmake gmake openssl@3
+
+      - name: Clone SoftEtherVPN_Stable
+        run: |
+          git clone https://github.com/SoftEtherVPN/SoftEtherVPN_Stable.git
+          cd SoftEtherVPN_Stable
+        shell: bash
+
+      - name: Build ARM64
+        run: |
+          export OPENSSL_ROOT_DIR=$(brew --prefix openssl@3)
+          export CFLAGS="-arch arm64 -I$OPENSSL_ROOT_DIR/include"
+          export LDFLAGS="-arch arm64 -L$OPENSSL_ROOT_DIR/lib"
+          
+          cd SoftEtherVPN_Stable/vpnclient
+          gmake clean || true
+          gmake -j$(sysctl -n hw.ncpu)
+          cp vpnclient vpnclient.arm64
+          cp vpncmd vpncmd.arm64
+
+      - name: Build x86_64 (Intel)
+        run: |
+          export OPENSSL_ROOT_DIR=$(brew --prefix openssl@3)
+          export CFLAGS="-arch x86_64 -I$OPENSSL_ROOT_DIR/include"
+          export LDFLAGS="-arch x86_64 -L$OPENSSL_ROOT_DIR/lib"
+
+          cd SoftEtherVPN_Stable/vpnclient
+          gmake clean || true
+          gmake -j$(sysctl -n hw.ncpu)
+          cp vpnclient vpnclient.x86_64
+          cp vpncmd vpncmd.x86_64
+
+      - name: Create Universal Binaries (lipo)
+        run: |
+          cd SoftEtherVPN_Stable/vpnclient
+          lipo -create vpnclient.arm64 vpnclient.x86_64 -output vpnclient.universal
+          lipo -create vpncmd.arm64 vpncmd.x86_64 -output vpncmd.universal
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: softether-macos-universal
+          path: |
+            SoftEtherVPN_Stable/vpnclient/vpnclient.universal
+            SoftEtherVPN_Stable/vpnclient/vpncmd.universal
